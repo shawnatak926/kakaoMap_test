@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Kakao Map Route</title>
+
+  <!-- 🔑 카카오 지도 JS 키 (libraries=services 필수) -->
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=18daa2632f3904b11cea2f0610fd6198&libraries=services"></script>
+
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; }
+    #container { display: flex; height: 100vh; }
+    #sidebar {
+      width: 320px;
+      padding: 16px;
+      border-right: 1px solid #ddd;
+      background: #fafafa;
+    }
+    #map { flex: 1; }
+    input { width: 100%; padding: 8px; margin-bottom: 8px; }
+    button { width: 100%; padding: 10px; }
+    .result {
+      margin-top: 12px;
+      padding: 10px;
+      background: #fff;
+      border: 1px solid #ddd;
+    }
+  </style>
+</head>
+<body>
+
+<div id="container">
+  <div id="sidebar">
+    <h2>경로 계산</h2>
+
+    <input id="startInput" placeholder="출발지 (예: 대구시청)">
+    <input id="endInput" placeholder="도착지 (예: 동대구역)">
+    <button onclick="searchPlaces()">경로 계산</button>
+
+    <div class="result">
+      <div>거리: <span id="distance">-</span></div>
+      <div>시간: <span id="time">-</span></div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+</div>
+
+<script>
+  /* 지도 생성 */
+  const map = new kakao.maps.Map(document.getElementById("map"), {
+    center: new kakao.maps.LatLng(35.8714, 128.6014),
+    level: 5
+  });
+
+  /* 장소 검색 객체 */
+  const ps = new kakao.maps.services.Places();
+
+  let startMarker = null;
+  let endMarker = null;
+  let startPoint = null;
+  let endPoint = null;
+
+  /* 출발지 / 도착지 검색 */
+  function searchPlaces() {
+    const startKeyword = document.getElementById("startInput").value;
+    const endKeyword = document.getElementById("endInput").value;
+
+    if (!startKeyword || !endKeyword) {
+      alert("출발지와 도착지를 입력하세요");
+      return;
+    }
+
+    ps.keywordSearch(startKeyword, (data, status) => {
+      if (status !== kakao.maps.services.Status.OK) {
+        alert("출발지를 찾을 수 없습니다");
+        return;
+      }
+
+      startPoint = data[0];
+      const startPos = new kakao.maps.LatLng(startPoint.y, startPoint.x);
+
+      if (startMarker) startMarker.setMap(null);
+      startMarker = new kakao.maps.Marker({ position: startPos, map });
+
+      ps.keywordSearch(endKeyword, (data2, status2) => {
+        if (status2 !== kakao.maps.services.Status.OK) {
+          alert("도착지를 찾을 수 없습니다");
+          return;
+        }
+
+        endPoint = data2[0];
+        const endPos = new kakao.maps.LatLng(endPoint.y, endPoint.x);
+
+        if (endMarker) endMarker.setMap(null);
+        endMarker = new kakao.maps.Marker({ position: endPos, map });
+
+        map.setBounds(new kakao.maps.LatLngBounds(startPos, endPos));
+
+        requestRoute();
+      });
+    });
+  }
+
+  /* 🚗 서버(Spring) REST API로 실제 경로 거리/시간 요청 */
+  function requestRoute() {
+    fetch(`/api/route?startLat=${startPoint.y}&startLng=${startPoint.x}&endLat=${endPoint.y}&endLng=${endPoint.x}`)
+            .then(res => res.json())
+            .then(data => {
+              const summary = data.routes[0].summary;
+
+              document.getElementById("distance").innerText =
+                      (summary.distance / 1000).toFixed(2) + " km";
+
+              document.getElementById("time").innerText =
+                      Math.round(summary.duration / 60) + " 분";
+            })
+            .catch(() => alert("경로 계산 실패"));
+  }
+</script>
+
+</body>
+</html>

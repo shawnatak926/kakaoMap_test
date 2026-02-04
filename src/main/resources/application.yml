@@ -1,0 +1,5 @@
+server:
+  port: 8080
+
+kakao:
+  rest-key: 4415c882c7c0fe64e567516b6bfadfb2
