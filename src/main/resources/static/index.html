@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>Kakao Map Route</title>
 
-  <!-- 🔑 카카오 지도 JS 키 (libraries=services 필수) -->
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=18daa2632f3904b11cea2f0610fd6198&libraries=services"></script>
 
   <style>
@@ -13,12 +12,21 @@
     #sidebar {
       width: 320px;
       padding: 16px;
-      border-right: 1px solid #ddd;
       background: #fafafa;
+      border-right: 1px solid #ddd;
     }
     #map { flex: 1; }
-    input { width: 100%; padding: 8px; margin-bottom: 8px; }
-    button { width: 100%; padding: 10px; }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    button {
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
     .result {
       margin-top: 12px;
       padding: 10px;
@@ -31,15 +39,15 @@
 
 <div id="container">
   <div id="sidebar">
-    <h2>경로 계산</h2>
+    <h3>경로 계산</h3>
 
-    <input id="startInput" placeholder="출발지 (예: 대구시청)">
-    <input id="endInput" placeholder="도착지 (예: 동대구역)">
+    <input id="startInput" placeholder="출발지 (예: 서울역)">
+    <input id="endInput" placeholder="도착지 (예: 강남역)">
     <button onclick="searchPlaces()">경로 계산</button>
 
     <div class="result">
       <div>거리: <span id="distance">-</span></div>
-      <div>시간: <span id="time">-</span></div>
+      <div>예상 시간: <span id="time">-</span></div>
     </div>
   </div>
 
@@ -49,73 +57,96 @@
 <script>
   /* 지도 생성 */
   const map = new kakao.maps.Map(document.getElementById("map"), {
-    center: new kakao.maps.LatLng(35.8714, 128.6014),
+    center: new kakao.maps.LatLng(37.5665, 126.9780),
     level: 5
   });
 
-  /* 장소 검색 객체 */
   const ps = new kakao.maps.services.Places();
 
   let startMarker = null;
   let endMarker = null;
-  let startPoint = null;
-  let endPoint = null;
+  let polyline = null;
 
-  /* 출발지 / 도착지 검색 */
+  let startPos, endPos;
+
+  /* 장소 검색 */
   function searchPlaces() {
-    const startKeyword = document.getElementById("startInput").value;
-    const endKeyword = document.getElementById("endInput").value;
+    const start = document.getElementById("startInput").value;
+    const end = document.getElementById("endInput").value;
 
-    if (!startKeyword || !endKeyword) {
+    if (!start || !end) {
       alert("출발지와 도착지를 입력하세요");
       return;
     }
 
-    ps.keywordSearch(startKeyword, (data, status) => {
+    ps.keywordSearch(start, (data, status) => {
       if (status !== kakao.maps.services.Status.OK) {
-        alert("출발지를 찾을 수 없습니다");
+        alert("출발지 검색 실패");
         return;
       }
 
-      startPoint = data[0];
-      const startPos = new kakao.maps.LatLng(startPoint.y, startPoint.x);
+      startPos = new kakao.maps.LatLng(data[0].y, data[0].x);
 
       if (startMarker) startMarker.setMap(null);
       startMarker = new kakao.maps.Marker({ position: startPos, map });
 
-      ps.keywordSearch(endKeyword, (data2, status2) => {
+      ps.keywordSearch(end, (data2, status2) => {
         if (status2 !== kakao.maps.services.Status.OK) {
-          alert("도착지를 찾을 수 없습니다");
+          alert("도착지 검색 실패");
           return;
         }
 
-        endPoint = data2[0];
-        const endPos = new kakao.maps.LatLng(endPoint.y, endPoint.x);
+        endPos = new kakao.maps.LatLng(data2[0].y, data2[0].x);
 
         if (endMarker) endMarker.setMap(null);
         endMarker = new kakao.maps.Marker({ position: endPos, map });
-
-        map.setBounds(new kakao.maps.LatLngBounds(startPos, endPos));
 
         requestRoute();
       });
     });
   }
 
-  /* 🚗 서버(Spring) REST API로 실제 경로 거리/시간 요청 */
+  /* 서버에 경로 요청 */
   function requestRoute() {
-    fetch(`/api/route?startLat=${startPoint.y}&startLng=${startPoint.x}&endLat=${endPoint.y}&endLng=${endPoint.x}`)
+    fetch(`/api/route?startLat=${startPos.getLat()}&startLng=${startPos.getLng()}&endLat=${endPos.getLat()}&endLng=${endPos.getLng()}`)
             .then(res => res.json())
-            .then(data => {
-              const summary = data.routes[0].summary;
+            .then(data => drawRoute(data));
+  }
 
-              document.getElementById("distance").innerText =
-                      (summary.distance / 1000).toFixed(2) + " km";
+  /* 경로 그리기 */
+  function drawRoute(data) {
+    if (polyline) polyline.setMap(null);
 
-              document.getElementById("time").innerText =
-                      Math.round(summary.duration / 60) + " 분";
-            })
-            .catch(() => alert("경로 계산 실패"));
+    const summary = data.routes[0].summary;
+    const roads = data.routes[0].sections[0].roads;
+
+    document.getElementById("distance").innerText =
+            (summary.distance / 1000).toFixed(2) + " km";
+    document.getElementById("time").innerText =
+            Math.round(summary.duration / 60) + " 분";
+
+    const path = [];
+
+    roads.forEach(road => {
+      const vertexes = road.vertexes;
+      for (let i = 0; i < vertexes.length; i += 2) {
+        path.push(new kakao.maps.LatLng(vertexes[i + 1], vertexes[i]));
+      }
+    });
+
+    polyline = new kakao.maps.Polyline({
+      path,
+      strokeWeight: 5,
+      strokeColor: '#ff0000',
+      strokeOpacity: 0.9,
+      strokeStyle: 'solid'
+    });
+
+    polyline.setMap(map);
+
+    const bounds = new kakao.maps.LatLngBounds();
+    path.forEach(p => bounds.extend(p));
+    map.setBounds(bounds);
   }
 </script>
 
