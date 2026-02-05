@@ -2,31 +2,68 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>Kakao Map Route</title>
+  <title>Kakao Map Route + GPS</title>
 
+  <!-- Kakao Map SDK -->
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=18daa2632f3904b11cea2f0610fd6198&libraries=services"></script>
 
   <style>
-    body { margin: 0; font-family: Arial, sans-serif; }
-    #container { display: flex; height: 100vh; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    #container {
+      display: flex;
+      height: 100vh;
+    }
+
     #sidebar {
       width: 320px;
       padding: 16px;
       background: #fafafa;
       border-right: 1px solid #ddd;
+      box-sizing: border-box;
     }
-    #map { flex: 1; }
-    input, button {
+
+    #map {
+      flex: 1;
+    }
+
+    input {
       width: 100%;
       padding: 10px;
       margin-bottom: 8px;
       font-size: 14px;
+      box-sizing: border-box;
     }
+
     button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 8px;
+      font-size: 14px;
       border: none;
       cursor: pointer;
+      border-radius: 6px;
+    }
+
+    /* 경로 계산 버튼 */
+    #routeBtn {
+      background-color: #5366FB;
+      color: white;
       font-weight: bold;
     }
+
+    #routeBtn:hover {
+      opacity: 0.9;
+    }
+
+    /* GPS 버튼 */
+    #gpsBtn {
+      background: #eaeaea;
+    }
+
     .result {
       margin-top: 12px;
       padding: 10px;
@@ -42,8 +79,10 @@
     <h3>경로 계산</h3>
 
     <input id="startInput" placeholder="출발지 (예: 서울역)">
+    <button id="gpsBtn" onclick="useMyLocation()">📍 내 위치를 출발지로</button>
+
     <input id="endInput" placeholder="도착지 (예: 강남역)">
-    <button onclick="searchPlaces()">경로 계산</button>
+    <button id="routeBtn" onclick="searchPlaces()">경로 계산</button>
 
     <div class="result">
       <div>거리: <span id="distance">-</span></div>
@@ -67,42 +106,84 @@
   let endMarker = null;
   let polyline = null;
 
-  let startPos, endPos;
+  let startPos = null;
+  let endPos = null;
+
+  /* GPS로 현재 위치 */
+  function useMyLocation() {
+    if (!navigator.geolocation) {
+      alert("GPS를 지원하지 않는 브라우저입니다.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+            position => {
+              const lat = position.coords.latitude;
+              const lng = position.coords.longitude;
+
+              startPos = new kakao.maps.LatLng(lat, lng);
+
+              if (startMarker) startMarker.setMap(null);
+              startMarker = new kakao.maps.Marker({
+                position: startPos,
+                map: map
+              });
+
+              map.setCenter(startPos);
+              document.getElementById("startInput").value = "내 위치";
+            },
+            () => {
+              alert("위치 정보를 가져올 수 없습니다.");
+            }
+    );
+  }
 
   /* 장소 검색 */
   function searchPlaces() {
     const start = document.getElementById("startInput").value;
     const end = document.getElementById("endInput").value;
 
-    if (!start || !end) {
-      alert("출발지와 도착지를 입력하세요");
+    if (!startPos && !start) {
+      alert("출발지를 입력하거나 GPS를 사용하세요.");
       return;
     }
 
-    ps.keywordSearch(start, (data, status) => {
+    if (!end) {
+      alert("도착지를 입력하세요.");
+      return;
+    }
+
+    if (!startPos) {
+      ps.keywordSearch(start, (data, status) => {
+        if (status !== kakao.maps.services.Status.OK) {
+          alert("출발지 검색 실패");
+          return;
+        }
+        startPos = new kakao.maps.LatLng(data[0].y, data[0].x);
+        if (startMarker) startMarker.setMap(null);
+        startMarker = new kakao.maps.Marker({ position: startPos, map });
+        searchEnd();
+      });
+    } else {
+      searchEnd();
+    }
+  }
+
+  function searchEnd() {
+    const end = document.getElementById("endInput").value;
+
+    ps.keywordSearch(end, (data, status) => {
       if (status !== kakao.maps.services.Status.OK) {
-        alert("출발지 검색 실패");
+        alert("도착지 검색 실패");
         return;
       }
 
-      startPos = new kakao.maps.LatLng(data[0].y, data[0].x);
+      endPos = new kakao.maps.LatLng(data[0].y, data[0].x);
 
-      if (startMarker) startMarker.setMap(null);
-      startMarker = new kakao.maps.Marker({ position: startPos, map });
+      if (endMarker) endMarker.setMap(null);
+      endMarker = new kakao.maps.Marker({ position: endPos, map });
 
-      ps.keywordSearch(end, (data2, status2) => {
-        if (status2 !== kakao.maps.services.Status.OK) {
-          alert("도착지 검색 실패");
-          return;
-        }
-
-        endPos = new kakao.maps.LatLng(data2[0].y, data2[0].x);
-
-        if (endMarker) endMarker.setMap(null);
-        endMarker = new kakao.maps.Marker({ position: endPos, map });
-
-        requestRoute();
-      });
+      requestRoute();
     });
   }
 
@@ -128,18 +209,17 @@
     const path = [];
 
     roads.forEach(road => {
-      const vertexes = road.vertexes;
-      for (let i = 0; i < vertexes.length; i += 2) {
-        path.push(new kakao.maps.LatLng(vertexes[i + 1], vertexes[i]));
+      const v = road.vertexes;
+      for (let i = 0; i < v.length; i += 2) {
+        path.push(new kakao.maps.LatLng(v[i + 1], v[i]));
       }
     });
 
     polyline = new kakao.maps.Polyline({
       path,
       strokeWeight: 5,
-      strokeColor: '#ff0000',
-      strokeOpacity: 0.9,
-      strokeStyle: 'solid'
+      strokeColor: "#ff0000",
+      strokeOpacity: 0.9
     });
 
     polyline.setMap(map);
