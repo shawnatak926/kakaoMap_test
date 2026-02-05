@@ -1,6 +1,5 @@
 package com.example.kakaomap.service;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -10,8 +9,8 @@ import java.util.Map;
 @Service
 public class KakaoMapService {
 
-    @Value("${kakao.rest-key}")
-    private String kakaoRestKey;
+    private static final String KAKAO_REST_KEY =
+            "4415c882c7c0fe64e567516b6bfadfb2";
 
     private final RestTemplate restTemplate;
 
@@ -29,7 +28,8 @@ public class KakaoMapService {
                         "&destination=" + endLng + "," + endLat;
 
         HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", "KakaoAK " + kakaoRestKey);
+        headers.set("Authorization", "KakaoAK " + KAKAO_REST_KEY);
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
