@@ -48,12 +48,6 @@
       border-radius: 6px;
     }
 
-    #routeBtn {
-      background-color: #5366FB;
-      color: white;
-      font-weight: bold;
-    }
-
     #gpsBtn {
       background: #eaeaea;
     }
@@ -64,8 +58,9 @@
     }
 
     .destBtn {
-      background: #ffffff;
-      border: 1px solid #ddd;
+      background: #5366FB;
+      color: white;
+      font-weight: bold;
     }
 
     .result {
@@ -93,8 +88,6 @@
     <button class="destBtn" onclick="selectFixedDestination('동대구역')">동대구역</button>
     <button class="destBtn" onclick="selectFixedDestination('용산역')">용산역</button>
     <button class="destBtn" onclick="selectFixedDestination('대곡역')">대곡역</button>
-
-    <button id="routeBtn" onclick="searchPlaces()">경로 계산</button>
 
     <div class="result">
       <div>거리: <span id="distance">-</span></div>
@@ -166,7 +159,7 @@
                 requestRoute();
               }
             },
-            err => console.log("위치 오류:", err.message), // alert → console.log
+            err => console.log("위치 오류:", err.message),
             { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
   }
@@ -184,7 +177,7 @@
   /* 페이지 벗어날 때 자동 중지 */
   window.addEventListener("beforeunload", stopTracking);
 
-  /* 고정 도착지 선택 */
+  /* 고정 도착지 선택 → 바로 경로 계산 */
   function selectFixedDestination(label) {
     const keyword = DEST_MAP[label];
 
@@ -202,41 +195,13 @@
       if (endMarker) endMarker.setMap(null);
       endMarker = new kakao.maps.Marker({ position: endPos, map });
 
-      map.setCenter(endPos);
-    });
-  }
-
-  /* 출발지 / 도착지 검색 */
-  function searchPlaces() {
-    const start = document.getElementById("startInput").value;
-
-    if (!startPos && !start) {
-      alert("출발지를 입력하거나 GPS를 사용하세요.");
-      return;
-    }
-
-    if (!endPos) {
-      alert("도착지를 선택하세요.");
-      return;
-    }
-
-    if (!startPos) {
-      ps.keywordSearch(start, (data, status) => {
-        if (status !== kakao.maps.services.Status.OK) {
-          alert("출발지 검색 실패");
-          return;
-        }
-
-        startPos = new kakao.maps.LatLng(data[0].y, data[0].x);
-
-        if (startMarker) startMarker.setMap(null);
-        startMarker = new kakao.maps.Marker({ position: startPos, map });
-
+      // 출발지가 있으면 바로 경로 계산
+      if (startPos) {
         requestRoute();
-      });
-    } else {
-      requestRoute();
-    }
+      } else {
+        alert("출발지를 먼저 설정해주세요.");
+      }
+    });
   }
 
   /* 서버에 경로 요청 */
