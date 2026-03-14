@@ -58,6 +58,11 @@
       background: #eaeaea;
     }
 
+    #stopBtn {
+      background: #ff4d4d;
+      color: white;
+    }
+
     .destBtn {
       background: #ffffff;
       border: 1px solid #ddd;
@@ -78,7 +83,9 @@
     <h3>경로 계산</h3>
 
     <input id="startInput" placeholder="출발지 (예: 서울역)">
-    <button id="gpsBtn" onclick="useMyLocation()">📍 내 위치를 출발지로</button>
+
+    <button id="gpsBtn" onclick="startTracking()">📍 내 위치를 출발지로</button>
+    <button id="stopBtn" onclick="stopTracking()" style="display:none;">⏹ 추적 중지</button>
 
     <input id="endInput" placeholder="도착지" readonly>
 
@@ -119,21 +126,65 @@
 
   let startPos = null;
   let endPos = null;
+  let watchId = null;
 
-  /* GPS 출발지 */
-  function useMyLocation() {
-    navigator.geolocation.getCurrentPosition(pos => {
-      startPos = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+  /* 실시간 GPS 추적 시작 */
+  function startTracking() {
+    if (!navigator.geolocation) {
+      alert("위치 서비스를 지원하지 않는 브라우저입니다.");
+      return;
+    }
 
-      if (startMarker) startMarker.setMap(null);
-      startMarker = new kakao.maps.Marker({ position: startPos, map });
+    document.getElementById("gpsBtn").style.display = "none";
+    document.getElementById("stopBtn").style.display = "block";
 
-      map.setCenter(startPos);
-      document.getElementById("startInput").value = "내 위치";
-    });
+    watchId = navigator.geolocation.watchPosition(
+            pos => {
+              const lat = pos.coords.latitude;
+              const lng = pos.coords.longitude;
+              startPos = new kakao.maps.LatLng(lat, lng);
+
+              // 마커 업데이트
+              if (startMarker) {
+                startMarker.setPosition(startPos);
+              } else {
+                startMarker = new kakao.maps.Marker({ position: startPos, map });
+              }
+
+              map.setCenter(startPos);
+              document.getElementById("startInput").value = "내 위치";
+
+              // 서버에 위치 전송
+              fetch("/api/location", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ lat, lng, timestamp: Date.now() })
+              });
+
+              // 도착지가 선택된 상태면 경로 자동 재계산
+              if (endPos) {
+                requestRoute();
+              }
+            },
+            err => console.log("위치 오류:", err.message), // alert → console.log
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
   }
 
-  /* 고정 도착지 선택 + 자동 경로 계산 */
+  /* 실시간 GPS 추적 중지 */
+  function stopTracking() {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+    document.getElementById("stopBtn").style.display = "none";
+    document.getElementById("gpsBtn").style.display = "block";
+  }
+
+  /* 페이지 벗어날 때 자동 중지 */
+  window.addEventListener("beforeunload", stopTracking);
+
+  /* 고정 도착지 선택 */
   function selectFixedDestination(label) {
     const keyword = DEST_MAP[label];
 
@@ -152,8 +203,6 @@
       endMarker = new kakao.maps.Marker({ position: endPos, map });
 
       map.setCenter(endPos);
-
-      searchPlaces(); // 자동 경로 계산
     });
   }
 
@@ -194,11 +243,17 @@
   function requestRoute() {
     fetch(`/api/route?startLat=${startPos.getLat()}&startLng=${startPos.getLng()}&endLat=${endPos.getLat()}&endLng=${endPos.getLng()}`)
             .then(res => res.json())
-            .then(drawRoute);
+            .then(drawRoute)
+            .catch(err => console.log("경로 요청 오류:", err));
   }
 
   /* 경로 표시 */
   function drawRoute(data) {
+    if (!data.routes || !data.routes[0]) {
+      console.log("경로 데이터 없음");
+      return;
+    }
+
     if (polyline) polyline.setMap(null);
 
     const summary = data.routes[0].summary;
